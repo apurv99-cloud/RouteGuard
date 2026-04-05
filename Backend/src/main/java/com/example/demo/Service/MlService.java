@@ -23,7 +23,7 @@ public class MlService {
             String polyline
     ) {
 
-        String url = "http://ml:8000/predict";
+        String url = "http://ml:8000/predict"; // local Machine
 
         Map<String, Object> request = new HashMap<>();
         request.put("origin_lat", originLat);
