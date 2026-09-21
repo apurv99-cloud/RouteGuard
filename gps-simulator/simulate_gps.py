@@ -72,6 +72,29 @@ def decode_polyline(encoded: str) -> list[tuple[float, float]]:
     return coordinates
 
 
+def parse_route_geometry(value: str) -> list[tuple[float, float]]:
+    """Read the persisted route format used by the current Trip entity.
+
+    Current seeded trips store points as `latitude,longitude|...`. The encoded
+    polyline fallback keeps this simulator compatible with trips produced by
+    an OSRM encoded-polyline pipeline.
+    """
+    if "|" in value:
+        raw_points = value.split("|")
+        try:
+            coordinates = [
+                (float(parts[0]), float(parts[1]))
+                for point in raw_points
+                for parts in [point.split(",")]
+                if len(parts) == 2
+            ]
+        except ValueError:
+            coordinates = []
+        if len(coordinates) == len(raw_points) and len(coordinates) >= 2:
+            return coordinates
+    return decode_polyline(value)
+
+
 def decode_component(encoded: str, index: int) -> tuple[int, int]:
     result = 0
     shift = 0
@@ -113,50 +136,174 @@ def assigned_route(base_url: str, truck_id: str) -> list[tuple[float, float]]:
     if not isinstance(polyline, str) or not polyline.strip():
         raise RuntimeError(f"Truck {truck_id}'s assigned trip has no persisted polyline")
 
-    return decode_polyline(polyline)
+    return parse_route_geometry(polyline)
 
 
-def simulate(base_url: str, truck_id: str, interval: float) -> None:
+def interpolate(
+    first: tuple[float, float], second: tuple[float, float], fraction: float
+) -> tuple[float, float]:
+    fraction = max(0.0, min(1.0, fraction))
+    return (
+        first[0] + (second[0] - first[0]) * fraction,
+        first[1] + (second[1] - first[1]) * fraction,
+    )
+
+
+def offset_point(
+    point: tuple[float, float],
+    previous_point: tuple[float, float],
+    next_point: tuple[float, float],
+    offset_meters: float,
+) -> tuple[float, float]:
+    """Offset a route point approximately perpendicular to its local segment."""
+    latitude, longitude = point
+    north_south = next_point[0] - previous_point[0]
+    east_west = (next_point[1] - previous_point[1]) * math.cos(math.radians(latitude))
+    length = math.hypot(north_south, east_west)
+    if length == 0:
+        return point
+
+    meters_per_degree_latitude = 111_320.0
+    meters_per_degree_longitude = meters_per_degree_latitude * math.cos(math.radians(latitude))
+    perpendicular_north = -east_west / length * offset_meters
+    perpendicular_east = north_south / length * offset_meters
+    return (
+        latitude + perpendicular_north / meters_per_degree_latitude,
+        longitude + perpendicular_east / meters_per_degree_longitude,
+    )
+
+
+def send_point(
+    gps_url: str,
+    truck_id: str,
+    point: tuple[float, float],
+    previous_point: tuple[float, float] | None,
+    interval: float,
+    phase: str,
+    offset_meters: float,
+) -> tuple[float, float]:
+    latitude, longitude = point
+    speed_kmh = 0.0
+    if previous_point is not None:
+        speed_kmh = distance_km(previous_point, point) / (interval / 3600)
+
+    timestamp = datetime.now().replace(microsecond=0).isoformat()
+    payload = {
+        "truckId": truck_id,
+        "latitude": latitude,
+        "longitude": longitude,
+        "timestamp": timestamp,
+        "speedKmh": round(speed_kmh, 2),
+    }
+    status, response = post_json(gps_url, payload)
+    print(
+        f"[{timestamp}] Truck: {truck_id} | Phase: {phase} | "
+        f"Offset: {offset_meters:.1f}m | Lat: {latitude:.6f} | "
+        f"Lon: {longitude:.6f} | POST: {status}"
+    )
+    if isinstance(response, dict):
+        print(
+            f"Backend response: riskLevel={response.get('riskLevel')} "
+            f"deviating={response.get('deviating')} "
+            f"distanceFromRoute={response.get('distanceFromRoute')}"
+        )
+    return point
+
+
+def simulate_normal(base_url: str, truck_id: str, route: list[tuple[float, float]], interval: float) -> None:
+    gps_url = f"{base_url.rstrip('/')}/gps"
+    previous_point: tuple[float, float] | None = None
+    print(f"Truck: {truck_id}")
+    print("Mode: NORMAL")
+    print(f"Assigned route points: {len(route)}")
+    for point in route:
+        previous_point = send_point(gps_url, truck_id, point, previous_point, interval, "ON_ROUTE", 0.0)
+        time.sleep(interval)
+
+
+def simulate_deviation(
+    base_url: str,
+    truck_id: str,
+    route: list[tuple[float, float]],
+    interval: float,
+    deviation_distance: float,
+    deviation_start: float,
+    deviation_duration: float,
+) -> None:
+    if not 0.0 < deviation_start < 1.0:
+        raise ValueError("--deviation-start must be between 0 and 1")
+    if deviation_distance <= 0:
+        raise ValueError("--deviation-distance must be greater than zero")
+    if deviation_duration < 0:
+        raise ValueError("--deviation-duration cannot be negative")
+
+    gps_url = f"{base_url.rstrip('/')}/gps"
+    start_index = max(1, min(len(route) - 2, int(len(route) * deviation_start)))
+    previous_point: tuple[float, float] | None = None
+
+    print(f"Truck: {truck_id}")
+    print("Mode: DEVIATION")
+    print(f"Assigned route points: {len(route)}")
+    for point in route[:start_index]:
+        previous_point = send_point(gps_url, truck_id, point, previous_point, interval, "ON_ROUTE", 0.0)
+        time.sleep(interval)
+
+    previous_route_point = route[start_index - 1]
+    route_point = route[start_index]
+    next_route_point = route[start_index + 1]
+    steps = max(1, int(round(deviation_distance / 25.0)))
+    for step in range(1, steps + 1):
+        offset = deviation_distance * step / steps
+        point = offset_point(route_point, previous_route_point, next_route_point, offset)
+        previous_point = send_point(
+            gps_url, truck_id, point, previous_point, interval, "DEVIATING", offset
+        )
+        time.sleep(interval)
+
+    hold_steps = max(1, int(math.ceil(deviation_duration / interval)))
+    held_point = offset_point(
+        route_point, previous_route_point, next_route_point, deviation_distance
+    )
+    for _ in range(hold_steps):
+        previous_point = send_point(
+            gps_url, truck_id, held_point, previous_point, interval, "DEVIATED", deviation_distance
+        )
+        time.sleep(interval)
+
+    for step in range(steps - 1, -1, -1):
+        offset = deviation_distance * step / steps
+        point = offset_point(route_point, previous_route_point, next_route_point, offset)
+        previous_point = send_point(
+            gps_url, truck_id, point, previous_point, interval, "RETURNING", offset
+        )
+        time.sleep(interval)
+
+
+def simulate(
+    base_url: str,
+    truck_id: str,
+    interval: float,
+    mode: str,
+    deviation_distance: float,
+    deviation_start: float,
+    deviation_duration: float,
+) -> None:
     if interval <= 0:
         raise ValueError("--interval must be greater than zero")
 
     route = assigned_route(base_url, truck_id)
-    gps_url = f"{base_url.rstrip('/')}/gps"
-    previous_point: tuple[float, float] | None = None
-
-    print(f"Truck: {truck_id}")
-    print("Mode: NORMAL")
-    print(f"Assigned route points: {len(route)}")
-
-    for latitude, longitude in route:
-        speed_kmh = 0.0
-        if previous_point is not None:
-            speed_kmh = distance_km(previous_point, (latitude, longitude)) / (interval / 3600)
-
-        timestamp = datetime.now().replace(microsecond=0).isoformat()
-        payload = {
-            "truckId": truck_id,
-            "latitude": latitude,
-            "longitude": longitude,
-            "timestamp": timestamp,
-            "speedKmh": round(speed_kmh, 2),
-        }
-        status, response = post_json(gps_url, payload)
-        print(
-            f"Latitude: {latitude:.6f} | Longitude: {longitude:.6f} | "
-            f"Speed: {speed_kmh:.2f} km/h | Timestamp: {timestamp} | "
-            f"HTTP Status: {status}"
+    if mode == "normal":
+        simulate_normal(base_url, truck_id, route, interval)
+    else:
+        simulate_deviation(
+            base_url,
+            truck_id,
+            route,
+            interval,
+            deviation_distance,
+            deviation_start,
+            deviation_duration,
         )
-        if isinstance(response, dict):
-            print(
-                f"Backend: status={response.get('status')} "
-                f"risk={response.get('riskLevel')} "
-                f"deviating={response.get('deviating')} "
-                f"distanceFromRoute={response.get('distanceFromRoute')}"
-            )
-
-        previous_point = (latitude, longitude)
-        time.sleep(interval)
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,13 +322,45 @@ def parse_args() -> argparse.Namespace:
         default="http://localhost:8080/api",
         help="Backend API base URL (default: http://localhost:8080/api)",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("normal", "deviation"),
+        default="normal",
+        help="Telemetry mode (default: normal)",
+    )
+    parser.add_argument(
+        "--deviation-distance",
+        type=float,
+        default=500.0,
+        help="Maximum perpendicular offset in meters (default: 500)",
+    )
+    parser.add_argument(
+        "--deviation-start",
+        type=float,
+        default=0.25,
+        help="Route fraction at which deviation starts (default: 0.25)",
+    )
+    parser.add_argument(
+        "--deviation-duration",
+        type=float,
+        default=30.0,
+        help="Seconds to remain at maximum deviation (default: 30)",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     try:
         arguments = parse_args()
-        simulate(arguments.base_url, arguments.truck_id, arguments.interval)
+        simulate(
+            arguments.base_url,
+            arguments.truck_id,
+            arguments.interval,
+            arguments.mode,
+            arguments.deviation_distance,
+            arguments.deviation_start,
+            arguments.deviation_duration,
+        )
     except KeyboardInterrupt:
         print("\nSimulator stopped.")
     except (RuntimeError, ValueError, json.JSONDecodeError) as error:

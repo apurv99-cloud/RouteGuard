@@ -1,5 +1,6 @@
 package com.example.demo;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -29,5 +30,21 @@ class RouteDeviationServiceTest {
 
         assertTrue(result.getDistanceFromRoute() >= 0.0);
         assertTrue(result.getRiskLevel() != null);
+    }
+
+    @Test
+    void shouldUsePersistedRouteGeometryInsteadOfStraightOriginDestinationLine() {
+        Trip trip = new Trip();
+        trip.setOriginLat(28.5000);
+        trip.setOriginLon(77.0000);
+        trip.setDestLat(28.5000);
+        trip.setDestLon(77.1000);
+        trip.setPolyline("28.5000,77.0000|28.5500,77.0500|28.5000,77.1000");
+
+        RouteDeviationService service = new RouteDeviationService();
+        RouteDeviationResult result = service.evaluate(trip, 28.5500, 77.0500);
+
+        assertEquals(0.0, result.getDistanceFromRoute(), 0.01);
+        assertTrue(!result.isDeviating());
     }
 }
