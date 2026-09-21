@@ -6,20 +6,20 @@ import StatCard from "./dashboard/StatCard";
 import TruckTable from "./dashboard/TruckTable";
 import AnalyticsChart from "./dashboard/AnalyticsChart";
 import TruckDetail from "./dashboard/TruckDetail";
-import { trucksData, analyticsData, summaryStats } from "../data/mockData";
-import { useTrips, useAnalytics } from "../hooks/useAPI";
+import { useAnalytics } from "../hooks/useAPI";
+
+const defaultStats = {
+  totalTrucks: 0,
+  deviatedTrucks: 0,
+  completedTrips: 0,
+  avgOnTimeDelivery: "0%",
+};
 
 const Dashboard = () => {
   const [selectedTruck, setSelectedTruck] = useState(null);
   const [displayTrucks, setDisplayTrucks] = useState([]);
-  const [displayStats, setDisplayStats] = useState(summaryStats);
-  const [displayAnalytics, setDisplayAnalytics] = useState(analyticsData);
-
-  const {
-    data: trucksDataFromAPI,
-    loading: tripsLoading,
-    error: tripsError,
-  } = useTrips();
+  const [displayStats, setDisplayStats] = useState(defaultStats);
+  const [displayAnalytics, setDisplayAnalytics] = useState([]);
 
   const {
     data: backendAnalytics,
@@ -32,40 +32,33 @@ const Dashboard = () => {
       try {
         const data = await API.trucks.getAll();
 
-        const transformed = data.map((truck, index) => {
+        const transformed = (Array.isArray(data) ? data : []).map((truck, index) => {
           const trip = truck.trip || {};
-
+          const truckStatus = truck.status || trip.status || "PLANNED";
           const hours = trip.durationS ? Math.floor(trip.durationS / 3600) : 0;
-
           const minutes = trip.durationS
             ? Math.floor((trip.durationS % 3600) / 60)
             : 0;
 
-          //  FIXED STATUS
-          const status = trip.status ? trip.status : "ONGOING";
+          const hasDestination = trip.destLat != null && trip.destLon != null;
+          const hasLocation = truck.currentLatitude != null && truck.currentLongitude != null;
 
           return {
-            id: truck.id ? `TRK-${truck.id}` : `TRK-${index + 1}`,
+            id: truck.truckId || truck.id || `TRK-${index + 1}`,
             driver: truck.pilotName || "Unknown",
-
-            status: status,
-
-            lastLocation: [
-              trip.lastLocationLat ?? trip.originLat ?? 28.8571,
-              trip.lastLocationLon ?? trip.originLon ?? 76.827,
-            ],
-
-            destination: [trip.destLat || 28.5828, trip.destLon || 77.3988],
-
-            distance: trip.distanceM
-              ? `${(trip.distanceM / 1000).toFixed(1)} km`
-              : "N/A",
-
+            status: truckStatus,
+            lastLocation: hasLocation
+              ? [truck.currentLatitude, truck.currentLongitude]
+              : [trip.lastLocationLat ?? trip.originLat ?? 28.8571, trip.lastLocationLon ?? trip.originLon ?? 76.827],
+            destination: hasDestination ? [trip.destLat, trip.destLon] : null,
+            distance: truck.distanceFromRoute != null
+              ? `${(truck.distanceFromRoute / 1000).toFixed(1)} km`
+              : trip.distanceM
+                ? `${(trip.distanceM / 1000).toFixed(1)} km`
+                : "N/A",
             duration: trip.durationS ? `${hours}h ${minutes}m` : "N/A",
-
-            deviation: status === "DEVIATED",
-            risk: trip.riskScore ?? 0,
-
+            deviation: Boolean(truck.deviation || truckStatus === "DEVIATED" || truck.riskLevel === "HIGH"),
+            risk: trip.riskScore ?? truck.riskLevel ?? 0,
             polyline: trip.polyline || "",
           };
         });
@@ -75,31 +68,44 @@ const Dashboard = () => {
         setDisplayStats({
           totalTrucks: transformed.length,
           deviatedTrucks: transformed.filter((t) => t.deviation).length,
-          completedTrips: transformed.length,
-          avgOnTimeDelivery: "92%",
+          completedTrips: transformed.filter((t) => t.status === "COMPLETED").length,
+          avgOnTimeDelivery: transformed.length ? "92%" : "0%",
         });
       } catch (err) {
-        console.error(err);
+        console.error("Failed to load trucks:", err);
+        setDisplayTrucks([]);
+        setDisplayStats(defaultStats);
       }
     };
 
-    //  CALL ON LOAD
     fetchData();
-
-    //  INTERVAL
     const interval = setInterval(fetchData, 3000);
 
     return () => clearInterval(interval);
   }, []);
-  // Analytics
+
   useEffect(() => {
-    if (backendAnalytics && Array.isArray(backendAnalytics)) {
+    if (Array.isArray(backendAnalytics)) {
       setDisplayAnalytics(backendAnalytics);
+      return;
     }
+
+    if (backendAnalytics && typeof backendAnalytics === "object") {
+      setDisplayAnalytics([
+        { name: "Trips", deviations: Number(backendAnalytics.totalTrips ?? backendAnalytics.total ?? 0) },
+        { name: "Deviated", deviations: Number(backendAnalytics.deviatedTrips ?? backendAnalytics.deviated ?? 0) },
+      ]);
+      return;
+    }
+
+    setDisplayAnalytics([
+      { name: "Trips", deviations: 0 },
+      { name: "Deviated", deviations: 0 },
+    ]);
   }, [backendAnalytics]);
 
   //  Loading
-  if (tripsLoading || analyticsLoading) {
+  if (analyticsLoading) {
     return (
       <div className="flex h-screen bg-brand-lightest">
         <main className="flex-1 flex flex-col">
@@ -113,7 +119,7 @@ const Dashboard = () => {
   }
 
   //  Error
-  if (tripsError || analyticsError) {
+  if (analyticsError) {
     return (
       <div className="flex h-screen bg-brand-lightest">
         <main className="flex-1 flex flex-col">
@@ -125,7 +131,7 @@ const Dashboard = () => {
                 Failed to load dashboard
               </p>
               <p className="text-sm text-red-500">
-                {tripsError || analyticsError}
+                {analyticsError}
               </p>
               <button
                 onClick={() => window.location.reload()}
@@ -146,46 +152,53 @@ const Dashboard = () => {
         <Header />
 
         <div className="flex-1 overflow-y-auto p-8 space-y-8">
-          {/* STATS */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard
-              label="Total Fleet"
-              value={displayStats.totalTrucks}
-              icon={<Truck className="text-brand-deep" />}
-            />
-            <StatCard
-              label="Active Deviations"
-              value={displayStats.deviatedTrucks}
-              icon={<AlertTriangle className="text-red-500" />}
-              critical
-            />
-            <StatCard
-              label="Trips Today"
-              value={displayStats.completedTrips}
-              icon={<Clock />}
-            />
-            <StatCard
-              label="Efficiency"
-              value={displayStats.avgOnTimeDelivery}
-              icon={<TrendingUp />}
-            />
-          </div>
+          {selectedTruck ? (
+            <>
+              <TruckDetail
+                selectedTruck={selectedTruck}
+                setSelectedTruck={setSelectedTruck}
+              />
 
-          {/* TABLE + CHART */}
-          <div className="grid lg:grid-cols-3 gap-8">
-            <TruckTable
-              trucksData={displayTrucks.length > 0 ? displayTrucks : trucksData}
-              setSelectedTruck={setSelectedTruck}
-            />
-            <AnalyticsChart analyticsData={displayAnalytics} />
-          </div>
+              <div className="min-h-[360px]">
+                <AnalyticsChart analyticsData={displayAnalytics} />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* STATS */}
+              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard
+                  label="Total Fleet"
+                  value={displayStats.totalTrucks}
+                  icon={<Truck className="text-brand-deep" />}
+                />
+                <StatCard
+                  label="Active Deviations"
+                  value={displayStats.deviatedTrucks}
+                  icon={<AlertTriangle className="text-red-500" />}
+                  critical
+                />
+                <StatCard
+                  label="Trips Today"
+                  value={displayStats.completedTrips}
+                  icon={<Clock />}
+                />
+                <StatCard
+                  label="Efficiency"
+                  value={displayStats.avgOnTimeDelivery}
+                  icon={<TrendingUp />}
+                />
+              </div>
 
-          {/* DETAIL */}
-          {selectedTruck && (
-            <TruckDetail
-              selectedTruck={selectedTruck}
-              setSelectedTruck={setSelectedTruck}
-            />
+              {/* TABLE + CHART */}
+              <div className="grid lg:grid-cols-3 gap-8">
+                <TruckTable
+                  trucksData={displayTrucks}
+                  setSelectedTruck={setSelectedTruck}
+                />
+                <AnalyticsChart analyticsData={displayAnalytics} />
+              </div>
+            </>
           )}
         </div>
       </main>

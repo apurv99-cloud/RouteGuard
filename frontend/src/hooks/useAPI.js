@@ -75,17 +75,17 @@ export const useMutation = () => {
 };
 
 /**
- * 🔥 FIXED: Fetch all trucks (NOT trips)
+ * Fetch all available trips/routes from the backend
  */
 export const useTrips = () => {
-  return useFetch(() => API.trucks.getAll(), []);
+  return useFetch(() => API.trips.getAll(), []);
 };
 
 /**
- * Fetch single truck (optional)
+ * Fetch a single trip/route by ID
  */
 export const useTrip = (id) => {
-  return useFetch(() => API.trucks.getById(id), [id]);
+  return useFetch(() => API.trips.getById(id), [id]);
 };
 
 /**

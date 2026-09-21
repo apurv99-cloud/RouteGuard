@@ -1,0 +1,86 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.manifest
+*.pex
+*.whl
+
+# Virtual environment
+.venv/
+venv/
+env/
+.env/
+[Pp]yVE(nv)?/
+bin/
+include/
+lib/
+man/
+share/
+
+# Specific directories (uncomment as needed)
+# data/
+# docs/
+# tests/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-line.txt
+
+# Unit test / coverage
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment configuration
+.env
+.flaskenv
+.editorconfig
+
+# IDEs and editors
+# JetBrains
+.idea/
+*.iws
+*.iml
+*.ipr
+# VS Code
+.vscode/
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+run OSRM.txt

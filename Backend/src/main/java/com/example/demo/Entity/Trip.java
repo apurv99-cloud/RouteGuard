@@ -1,10 +1,12 @@
 package com.example.demo.Entity;
 
-import org.springframework.stereotype.Component;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.*;
 
-@Component
 @Entity
 @Table(name = "trips")
 public class Trip {
@@ -15,23 +17,14 @@ public class Trip {
 
     private Double originLat;
     private Double originLon;
-
     private Double destLat;
     private Double destLon;
 
-    // For Live Location
     private Double lastLocationLat;
     private Double lastLocationLon;
+
     @Column(name = "risk_score")
     private Integer riskScore = 0;
-
-    public int getRiskScore() {
-        return riskScore;
-    }
-
-    public void setRiskScore(int riskScore) {
-        this.riskScore = riskScore;
-    }
 
     private Double distanceM;
     private Double durationS;
@@ -40,9 +33,17 @@ public class Trip {
     private String polyline;
 
     @Enumerated(EnumType.STRING)
-    private TripStatus status = TripStatus.ONGOING;
+    private TripStatus status = TripStatus.PLANNED;
 
     private int deviationCounter = 0;
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<GPS> gpsHistory = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "trip")
+    private List<Truck> trucks = new ArrayList<>();
 
     public Long getId() {
         return id;
@@ -100,6 +101,14 @@ public class Trip {
         this.lastLocationLon = lastLocationLon;
     }
 
+    public Integer getRiskScore() {
+        return riskScore;
+    }
+
+    public void setRiskScore(Integer riskScore) {
+        this.riskScore = riskScore;
+    }
+
     public Double getDistanceM() {
         return distanceM;
     }
@@ -138,5 +147,21 @@ public class Trip {
 
     public void setDeviationCounter(int deviationCounter) {
         this.deviationCounter = deviationCounter;
+    }
+
+    public List<GPS> getGpsHistory() {
+        return gpsHistory;
+    }
+
+    public void setGpsHistory(List<GPS> gpsHistory) {
+        this.gpsHistory = gpsHistory;
+    }
+
+    public List<Truck> getTrucks() {
+        return trucks;
+    }
+
+    public void setTrucks(List<Truck> trucks) {
+        this.trucks = trucks;
     }
 }

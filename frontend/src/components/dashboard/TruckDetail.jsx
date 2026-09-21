@@ -34,8 +34,8 @@ const TruckDetail = ({ selectedTruck, setSelectedTruck }) => {
                 <MapView truck={selectedTruck} />
 
                 {/* Overlay for Info */}
-                <div className="absolute top-8 left-8 z-[1000] w-80 space-y-5 pointer-events-none">
-                    <div className="glass-dark p-7 rounded-[2rem] border border-white/10 shadow-2xl backdrop-blur-2xl pointer-events-auto transition-transform duration-500 hover:scale-[1.02]">
+                <div className="absolute top-8 left-8 z-[500] w-80 space-y-5 pointer-events-none">
+                    <div className="glass-dark p-7 rounded-[2rem] border border-white/10 shadow-xl backdrop-blur-sm pointer-events-auto transition-transform duration-500 hover:scale-[1.01] bg-white/5">
                         <div className="flex flex-col mb-4">
                             <p className="text-[10px] uppercase font-black tracking-[0.25em] text-brand-sage/50 mb-1">Command Pilot</p>
                             <h4 className="text-2xl font-black text-white tracking-tight">{selectedTruck.driver}</h4>
@@ -73,7 +73,7 @@ const TruckDetail = ({ selectedTruck, setSelectedTruck }) => {
                 </div>
 
                 {/* Bottom Stats Badge */}
-                <div className="absolute bottom-8 right-8 z-[1000] glass-dark px-6 py-4 rounded-2xl border border-white/10 shadow-2xl flex items-center gap-8 backdrop-blur-xl">
+                <div className="absolute bottom-8 right-8 z-[500] glass-dark px-6 py-4 rounded-2xl border border-white/10 shadow-xl flex items-center gap-8 backdrop-blur-sm bg-white/5">
                     <div className="flex flex-col">
                         <span className="text-[9px] uppercase font-black text-brand-sage/50 tracking-widest">Active Velocity</span>
                         <span className="text-lg font-black text-white tracking-tighter">64 km/h <span className="text-[10px] text-brand-sage/40">avg</span></span>

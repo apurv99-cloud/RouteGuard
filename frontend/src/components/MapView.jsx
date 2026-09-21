@@ -59,15 +59,18 @@ const MapView = ({ truck }) => {
   const currentPosition = truck.lastLocation || [28.8571, 76.827];
 
   return (
-    <div className="w-full h-[500px] rounded-2xl overflow-hidden shadow-xl">
+    <div className="w-full h-[500px] rounded-2xl overflow-hidden shadow-xl relative">
       <MapContainer
         center={currentPosition}
         zoom={13}
-        style={{ height: "100%", width: "100%" }}
+        style={{ height: "100%", width: "100%", minHeight: "500px", zIndex: 1 }}
       >
         <ChangeView center={currentPosition} />
 
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
 
         {/* ROUTE FIXED */}
         {routePoints && routePoints.length > 1 && (

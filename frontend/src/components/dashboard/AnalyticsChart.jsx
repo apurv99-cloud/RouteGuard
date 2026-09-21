@@ -2,9 +2,16 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp } from 'lucide-react';
 
+const fallbackAnalytics = [
+    { name: 'Trips', deviations: 0 },
+    { name: 'Deviated', deviations: 0 }
+];
+
 const AnalyticsChart = ({ analyticsData }) => {
+    const chartData = Array.isArray(analyticsData) && analyticsData.length > 0 ? analyticsData : fallbackAnalytics;
+
     return (
-        <div className="bg-brand-darkest rounded-[2rem] p-8 text-brand-sage border border-white/5 shadow-2xl overflow-hidden flex flex-col group transition-all duration-500 hover:shadow-brand-darkest/40">
+        <div className="bg-brand-darkest rounded-[2rem] p-8 text-brand-sage border border-white/5 shadow-2xl overflow-hidden flex flex-col group transition-all duration-500 hover:shadow-brand-darkest/40 h-[360px] min-h-[360px]">
             <div className="mb-8 flex items-center justify-between">
                 <div>
                     <h3 className="text-xl font-black text-white tracking-tight">System Reliability</h3>
@@ -15,9 +22,9 @@ const AnalyticsChart = ({ analyticsData }) => {
                 </div>
             </div>
 
-            <div className="flex-1 h-64 lg:h-auto min-h-[320px]">
+            <div className="relative flex-1 w-full h-[240px]">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analyticsData}>
+                    <BarChart data={chartData}>
                         <defs>
                             <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#AEC3B0" stopOpacity={1} />
@@ -57,7 +64,7 @@ const AnalyticsChart = ({ analyticsData }) => {
                             dataKey="deviations"
                             fill="url(#barGradient)"
                             radius={[6, 6, 0, 0]}
-                            barSize={16}
+                            barSize={18}
                         />
                     </BarChart>
                 </ResponsiveContainer>
