@@ -106,3 +106,39 @@ python .\gps-simulator\simulate_gps.py GPS-TEST-1 `
 Historical timestamps are distributed from 08:00 through 18:00 on each
 simulated date. The simulator prints successful and failed request counts and
 backend response values. Risk and deviation remain entirely backend-owned.
+
+## Phase 4 multi-truck mode
+
+Multi-truck mode runs one independent simulator worker per truck concurrently.
+Each worker fetches its own truck from `/api/trucks/{truckId}`, reads that
+truck's assigned persisted route, maintains its own route position, and sends
+telemetry with its own `truckId`. There is no shared route or shared route
+index. A request or route failure for one truck is reported while the other
+workers continue.
+
+```powershell
+python .\gps-simulator\simulate_gps.py `
+  --multi GPS-TEST-1 GPS-TEST-2 GPS-TEST-3 `
+  --interval 2
+```
+
+The `--mode` option applies independently to every selected truck, so
+multi-truck deviation and historical runs are also supported:
+
+```powershell
+python .\gps-simulator\simulate_gps.py `
+  --multi GPS-TEST-1 GPS-TEST-2 GPS-TEST-3 `
+  --mode deviation `
+  --interval 2 `
+  --deviation-distance 500
+```
+
+Each worker prints a final summary such as:
+
+```text
+GPS-TEST-1 -> 100 requests, 100 successful, 0 failed
+```
+
+All telemetry continues to use the existing `POST /api/gps` endpoint and the
+backend remains responsible for persistence, route deviation, risk, alerts,
+and status.

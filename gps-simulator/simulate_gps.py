@@ -12,10 +12,19 @@ import json
 import math
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from threading import Thread
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+
+@dataclass
+class SimulationStats:
+    requests: int = 0
+    successful: int = 0
+    failed: int = 0
 
 
 def fetch_json(url: str) -> Any:
@@ -183,6 +192,7 @@ def send_point(
     offset_meters: float,
     timestamp: str | None = None,
     speed_kmh: float | None = None,
+    stats: SimulationStats | None = None,
 ) -> tuple[float, float]:
     latitude, longitude = point
     if speed_kmh is None:
@@ -199,6 +209,9 @@ def send_point(
         "speedKmh": round(speed_kmh, 2),
     }
     status, response = post_json(gps_url, payload)
+    if stats is not None:
+        stats.requests += 1
+        stats.successful += 1
     print(
         f"[{timestamp}] Truck: {truck_id} | Phase: {phase} | "
         f"Offset: {offset_meters:.1f}m | Lat: {latitude:.6f} | "
@@ -213,14 +226,29 @@ def send_point(
     return point
 
 
-def simulate_normal(base_url: str, truck_id: str, route: list[tuple[float, float]], interval: float) -> None:
+def simulate_normal(
+    base_url: str,
+    truck_id: str,
+    route: list[tuple[float, float]],
+    interval: float,
+    stats: SimulationStats | None = None,
+) -> None:
     gps_url = f"{base_url.rstrip('/')}/gps"
     previous_point: tuple[float, float] | None = None
     print(f"Truck: {truck_id}")
     print("Mode: NORMAL")
     print(f"Assigned route points: {len(route)}")
     for point in route:
-        previous_point = send_point(gps_url, truck_id, point, previous_point, interval, "ON_ROUTE", 0.0)
+        try:
+            previous_point = send_point(
+                gps_url, truck_id, point, previous_point, interval, "ON_ROUTE", 0.0, stats=stats
+            )
+        except RuntimeError as error:
+            if stats is None:
+                raise
+            stats.requests += 1
+            stats.failed += 1
+            print(f"GPS request failed for {truck_id}: {error}", file=sys.stderr)
         time.sleep(interval)
 
 
@@ -232,6 +260,7 @@ def simulate_deviation(
     deviation_distance: float,
     deviation_start: float,
     deviation_duration: float,
+    stats: SimulationStats | None = None,
 ) -> None:
     if not 0.0 < deviation_start < 1.0:
         raise ValueError("--deviation-start must be between 0 and 1")
@@ -248,7 +277,16 @@ def simulate_deviation(
     print("Mode: DEVIATION")
     print(f"Assigned route points: {len(route)}")
     for point in route[:start_index]:
-        previous_point = send_point(gps_url, truck_id, point, previous_point, interval, "ON_ROUTE", 0.0)
+        try:
+            previous_point = send_point(
+                gps_url, truck_id, point, previous_point, interval, "ON_ROUTE", 0.0, stats=stats
+            )
+        except RuntimeError as error:
+            if stats is None:
+                raise
+            stats.requests += 1
+            stats.failed += 1
+            print(f"GPS request failed for {truck_id}: {error}", file=sys.stderr)
         time.sleep(interval)
 
     previous_route_point = route[start_index - 1]
@@ -258,9 +296,16 @@ def simulate_deviation(
     for step in range(1, steps + 1):
         offset = deviation_distance * step / steps
         point = offset_point(route_point, previous_route_point, next_route_point, offset)
-        previous_point = send_point(
-            gps_url, truck_id, point, previous_point, interval, "DEVIATING", offset
-        )
+        try:
+            previous_point = send_point(
+                gps_url, truck_id, point, previous_point, interval, "DEVIATING", offset, stats=stats
+            )
+        except RuntimeError as error:
+            if stats is None:
+                raise
+            stats.requests += 1
+            stats.failed += 1
+            print(f"GPS request failed for {truck_id}: {error}", file=sys.stderr)
         time.sleep(interval)
 
     hold_steps = max(1, int(math.ceil(deviation_duration / interval)))
@@ -268,17 +313,38 @@ def simulate_deviation(
         route_point, previous_route_point, next_route_point, deviation_distance
     )
     for _ in range(hold_steps):
-        previous_point = send_point(
-            gps_url, truck_id, held_point, previous_point, interval, "DEVIATED", deviation_distance
-        )
+        try:
+            previous_point = send_point(
+                gps_url,
+                truck_id,
+                held_point,
+                previous_point,
+                interval,
+                "DEVIATED",
+                deviation_distance,
+                stats=stats,
+            )
+        except RuntimeError as error:
+            if stats is None:
+                raise
+            stats.requests += 1
+            stats.failed += 1
+            print(f"GPS request failed for {truck_id}: {error}", file=sys.stderr)
         time.sleep(interval)
 
     for step in range(steps - 1, -1, -1):
         offset = deviation_distance * step / steps
         point = offset_point(route_point, previous_route_point, next_route_point, offset)
-        previous_point = send_point(
-            gps_url, truck_id, point, previous_point, interval, "RETURNING", offset
-        )
+        try:
+            previous_point = send_point(
+                gps_url, truck_id, point, previous_point, interval, "RETURNING", offset, stats=stats
+            )
+        except RuntimeError as error:
+            if stats is None:
+                raise
+            stats.requests += 1
+            stats.failed += 1
+            print(f"GPS request failed for {truck_id}: {error}", file=sys.stderr)
         time.sleep(interval)
 
 
@@ -299,6 +365,7 @@ def simulate_historical(
     days: int,
     points_per_day: int,
     historical_deviation: bool,
+    stats: SimulationStats | None = None,
 ) -> None:
     if days <= 0:
         raise ValueError("--days must be greater than zero")
@@ -358,12 +425,16 @@ def simulate_historical(
                     offset_meters,
                     timestamp=payload_timestamp,
                     speed_kmh=speed_kmh,
+                    stats=stats,
                 )
                 day_successful += 1
                 successful += 1
             except RuntimeError as error:
                 day_failed += 1
                 failed += 1
+                if stats is not None:
+                    stats.requests += 1
+                    stats.failed += 1
                 print(f"GPS request failed: {error}", file=sys.stderr)
 
             day_points += 1
@@ -394,13 +465,14 @@ def simulate(
     days: int,
     points_per_day: int,
     historical_deviation: bool,
+    stats: SimulationStats | None = None,
 ) -> None:
     if interval <= 0:
         raise ValueError("--interval must be greater than zero")
 
     route = assigned_route(base_url, truck_id)
     if mode == "normal":
-        simulate_normal(base_url, truck_id, route, interval)
+        simulate_normal(base_url, truck_id, route, interval, stats)
     elif mode == "deviation":
         simulate_deviation(
             base_url,
@@ -410,6 +482,7 @@ def simulate(
             deviation_distance,
             deviation_start,
             deviation_duration,
+            stats,
         )
     else:
         simulate_historical(
@@ -420,14 +493,98 @@ def simulate(
             days,
             points_per_day,
             historical_deviation,
+            stats,
         )
+
+
+def simulate_one(
+    base_url: str,
+    truck_id: str,
+    interval: float,
+    mode: str,
+    deviation_distance: float,
+    deviation_start: float,
+    deviation_duration: float,
+    days: int,
+    points_per_day: int,
+    historical_deviation: bool,
+) -> SimulationStats:
+    stats = SimulationStats()
+    try:
+        simulate(
+            base_url,
+            truck_id,
+            interval,
+            mode,
+            deviation_distance,
+            deviation_start,
+            deviation_duration,
+            days,
+            points_per_day,
+            historical_deviation,
+            stats,
+        )
+    except (RuntimeError, ValueError, json.JSONDecodeError) as error:
+        print(f"{truck_id} stopped: {error}", file=sys.stderr)
+    print(
+        f"{truck_id} -> {stats.requests} requests, "
+        f"{stats.successful} successful, {stats.failed} failed"
+    )
+    return stats
+
+
+def simulate_multi(
+    base_url: str,
+    truck_ids: list[str],
+    interval: float,
+    mode: str,
+    deviation_distance: float,
+    deviation_start: float,
+    deviation_duration: float,
+    days: int,
+    points_per_day: int,
+    historical_deviation: bool,
+) -> None:
+    threads: list[Thread] = []
+    for truck_id in truck_ids:
+        thread = Thread(
+            target=simulate_one,
+            args=(
+                base_url,
+                truck_id,
+                interval,
+                mode,
+                deviation_distance,
+                deviation_start,
+                deviation_duration,
+                days,
+                points_per_day,
+                historical_deviation,
+            ),
+            name=f"gps-{truck_id}",
+        )
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Send the assigned persisted route as GPS telemetry to RouteGuard."
     )
-    parser.add_argument("truck_id", help="Existing registered truck ID")
+    parser.add_argument(
+        "truck_id",
+        nargs="?",
+        help="Existing registered truck ID (omit when using --multi)",
+    )
+    parser.add_argument(
+        "--multi",
+        nargs="+",
+        metavar="TRUCK_ID",
+        help="Run concurrent GPS simulations for each listed truck",
+    )
     parser.add_argument(
         "--interval",
         type=float,
@@ -486,18 +643,34 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     try:
         arguments = parse_args()
-        simulate(
-            arguments.base_url,
-            arguments.truck_id,
-            arguments.interval,
-            arguments.mode,
-            arguments.deviation_distance,
-            arguments.deviation_start,
-            arguments.deviation_duration,
-            arguments.days,
-            arguments.points_per_day,
-            arguments.historical_deviation,
-        )
+        if bool(arguments.truck_id) == bool(arguments.multi):
+            raise ValueError("provide exactly one truck ID or use --multi TRUCK_ID ...")
+        if arguments.multi:
+            simulate_multi(
+                arguments.base_url,
+                arguments.multi,
+                arguments.interval,
+                arguments.mode,
+                arguments.deviation_distance,
+                arguments.deviation_start,
+                arguments.deviation_duration,
+                arguments.days,
+                arguments.points_per_day,
+                arguments.historical_deviation,
+            )
+        else:
+            simulate(
+                arguments.base_url,
+                arguments.truck_id,
+                arguments.interval,
+                arguments.mode,
+                arguments.deviation_distance,
+                arguments.deviation_start,
+                arguments.deviation_duration,
+                arguments.days,
+                arguments.points_per_day,
+                arguments.historical_deviation,
+            )
     except KeyboardInterrupt:
         print("\nSimulator stopped.")
     except (RuntimeError, ValueError, json.JSONDecodeError) as error:
