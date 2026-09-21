@@ -1,9 +1,16 @@
 import React from 'react';
-import { ChevronRight, AlertTriangle, TrendingUp } from 'lucide-react';
+import { ChevronRight, AlertTriangle, CheckCircle } from 'lucide-react';
 import MapView from '../MapView';
 import InfoRow from './InfoRow';
+import AnalyticsChart from './AnalyticsChart';
 
-const TruckDetail = ({ selectedTruck, setSelectedTruck }) => {
+const TruckDetail = ({
+    selectedTruck,
+    setSelectedTruck,
+    historyAnalytics,
+    historyLoading,
+    historyError,
+}) => {
     return (
         <div className="space-y-8 flex flex-col h-full animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
@@ -18,14 +25,10 @@ const TruckDetail = ({ selectedTruck, setSelectedTruck }) => {
                 </button>
                 <div className="flex items-center gap-4">
                     <div className="px-5 py-2.5 rounded-2xl bg-white border border-brand-sage/30 flex items-center gap-3 shadow-sm">
-                        <div className={`w-2.5 h-2.5 rounded-full ${selectedTruck.deviation ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
+                        <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
                         <span className="text-sm font-black text-brand-darkest tracking-tight">{selectedTruck.id}</span>
                     </div>
-                    {selectedTruck.deviation && (
-                        <div className="px-5 py-2.5 rounded-2xl bg-red-500 text-white font-black text-[10px] uppercase tracking-[0.2em] animate-pulse shadow-xl shadow-red-500/30 border border-red-400">
-                            High Priority Deviation Alert
-                        </div>
-                    )}
+
                 </div>
             </div>
 
@@ -43,45 +46,137 @@ const TruckDetail = ({ selectedTruck, setSelectedTruck }) => {
 
                         <div className="grid gap-4">
                             <div className="p-3.5 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="text-brand-sage/50 font-medium">Risk Level</span>
+                                    <span className={`font-black tracking-tight ${
+                                        selectedTruck.riskLevel === "CRITICAL" || selectedTruck.riskLevel === "HIGH"
+                                            ? "text-red-400"
+                                            : selectedTruck.riskLevel === "MEDIUM" || selectedTruck.riskLevel === "WARNING"
+                                                ? "text-amber-400"
+                                                : "text-green-400"
+                                    }`}>
+                                        {selectedTruck.riskLevel || "Unavailable"}
+                                    </span>
+                                </div>
+                                <InfoRow
+                                    label="Deviation"
+                                    value={selectedTruck.deviating ? "DEVIATED" : "ON ROUTE"}
+                                />
+                                <InfoRow
+                                    label="Distance from Route"
+                                    value={selectedTruck.distanceFromRoute != null
+                                        ? `${selectedTruck.distanceFromRoute.toFixed(1)} m`
+                                        : "Unavailable"}
+                                />
+                                <InfoRow
+                                    label="Speed"
+                                    value={selectedTruck.speedKmh != null
+                                        ? `${selectedTruck.speedKmh.toFixed(2)} km/h`
+                                        : "Unavailable"}
+                                />
                                 <InfoRow label="Odometer" value={selectedTruck.distance} />
                                 <InfoRow label="ETA" value={selectedTruck.duration} />
                                 <InfoRow label="Status" value={selectedTruck.status} />
+                                <InfoRow
+                                    label="Latitude"
+                                    value={selectedTruck.latitude ?? "No GPS fix"}
+                                />
+                                <InfoRow
+                                    label="Longitude"
+                                    value={selectedTruck.longitude ?? "No GPS fix"}
+                                />
+                                <InfoRow
+                                    label="Last GPS"
+                                    value={selectedTruck.lastGpsTimestamp || "No GPS fix"}
+                                />
                             </div>
+                        </div>
 
-                            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-brand-deep/30 border border-brand-steel/20">
-                                <div className="flex flex-col">
-                                    <span className="text-[9px] uppercase font-black text-brand-sage/60 tracking-widest">Efficiency</span>
-                                    <span className="text-sm font-black text-brand-lightest">94.8%</span>
-                                </div>
-                                <div className="w-16 h-8 bg-brand-sage/10 rounded-lg flex items-center justify-center">
-                                    <TrendingUp size={14} className="text-brand-sage" />
-                                </div>
-                            </div>
+                        <div className={`p-5 rounded-[2rem] border backdrop-blur-xl pointer-events-auto ${
+                            selectedTruck.deviating
+                                ? "bg-red-500/20 border-red-500/40"
+                                : "bg-green-500/10 border-green-500/30"
+                        }`}>
+                            <p className={`font-black text-xs uppercase tracking-[0.2em] flex items-center gap-2 ${
+                                selectedTruck.deviating ? "text-red-400" : "text-green-600"
+                            }`}>
+                                {selectedTruck.deviating
+                                    ? <AlertTriangle size={16} />
+                                    : <CheckCircle size={16} />}
+                                {selectedTruck.deviating
+                                    ? "Route Deviation Detected"
+                                    : "On Planned Route"}
+                            </p>
+                            <p className="text-sm font-bold mt-2 text-brand-darkest">
+                                Distance from route: {selectedTruck.distanceFromRoute != null
+                                    ? `${selectedTruck.distanceFromRoute.toFixed(1)} m`
+                                    : "Unavailable"}
+                            </p>
                         </div>
                     </div>
 
-                    {selectedTruck.deviation && (
-                        <div className="bg-red-500/20 border border-red-500/40 p-7 rounded-[2rem] backdrop-blur-xl pointer-events-auto animate-in fade-in slide-in-from-left-4 duration-700">
-                            <h5 className="text-red-400 font-black text-xs uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
-                                <AlertTriangle size={16} className="text-red-500" /> Security Breach
-                            </h5>
-                            <p className="text-[11px] text-black leading-relaxed font-medium">
-                                Anomalous trajectory detected. Route deviation exceeds protocol safety margins by <span className="text-red-400 font-bold">12.4%</span>.
+                    <section className="space-y-4">
+                        <div>
+                            <h3 className="text-xl font-black text-brand-darkest tracking-tight">
+                                Historical analytics
+                            </h3>
+                            <p className="text-xs text-brand-steel">
+                                Backend GPS history for {selectedTruck.id}; missing dates remain empty.
                             </p>
                         </div>
-                    )}
+                        {historyLoading ? (
+                            <div className="bg-brand-darkest rounded-[2rem] p-8 text-center text-brand-sage">
+                                Loading historical data...
+                            </div>
+                        ) : historyError ? (
+                            <div className="bg-red-50 rounded-[2rem] p-8 text-center text-red-700">
+                                {historyError}
+                            </div>
+                        ) : historyAnalytics.length === 0 ? (
+                            <div className="bg-white rounded-[2rem] border border-brand-sage/20 p-8 text-center text-brand-steel">
+                                No historical data available
+                            </div>
+                        ) : (
+                            <>
+                                <AnalyticsChart analyticsData={historyAnalytics} />
+                                <div className="overflow-x-auto rounded-[2rem] bg-white border border-brand-sage/20">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="text-[10px] uppercase tracking-widest text-brand-steel border-b border-brand-sage/20">
+                                            <tr>
+                                                <th className="px-5 py-4">Date</th>
+                                                <th className="px-5 py-4">GPS records</th>
+                                                <th className="px-5 py-4">Deviated records</th>
+                                                <th className="px-5 py-4">Max distance</th>
+                                                <th className="px-5 py-4">Backend risk values</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {historyAnalytics.map((day) => (
+                                                <tr key={day.date} className="border-b border-brand-sage/10 last:border-0">
+                                                    <td className="px-5 py-4 font-bold text-brand-darkest">{day.date}</td>
+                                                    <td className="px-5 py-4 text-brand-steel">{day.records}</td>
+                                                    <td className="px-5 py-4 text-brand-steel">{day.deviated}</td>
+                                                    <td className="px-5 py-4 text-brand-steel">
+                                                        {day.maxDistance == null ? 'Unavailable' : `${day.maxDistance.toFixed(1)} m`}
+                                                    </td>
+                                                    <td className="px-5 py-4 font-bold text-brand-deep">
+                                                        {day.riskLevels.length ? day.riskLevels.join(', ') : 'Unavailable'}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        )}
+                    </section>
                 </div>
 
                 {/* Bottom Stats Badge */}
                 <div className="absolute bottom-8 right-8 z-[500] glass-dark px-6 py-4 rounded-2xl border border-white/10 shadow-xl flex items-center gap-8 backdrop-blur-sm bg-white/5">
-                    <div className="flex flex-col">
-                        <span className="text-[9px] uppercase font-black text-brand-sage/50 tracking-widest">Active Velocity</span>
-                        <span className="text-lg font-black text-white tracking-tighter">64 km/h <span className="text-[10px] text-brand-sage/40">avg</span></span>
-                    </div>
-                    <div className="w-[1px] h-8 bg-white/10"></div>
                     <div className="flex flex-col text-right">
-                        <span className="text-[9px] uppercase font-black text-brand-sage/50 tracking-widest">Signal Strength</span>
-                        <span className="text-lg font-black text-brand-sage tracking-tighter">98.2%</span>
+                        <span className="text-[9px] uppercase font-black text-brand-sage/50 tracking-widest">Assigned Trip</span>
+                        <span className="text-lg font-black text-brand-sage tracking-tighter">{selectedTruck.tripId || "N/A"}</span>
                     </div>
                 </div>
             </div>

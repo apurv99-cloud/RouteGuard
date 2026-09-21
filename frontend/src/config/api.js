@@ -98,7 +98,7 @@ export const API = {
       }),
 
     // Optional
-    getHistory: (tripId) => apiCall(`/gps/${tripId}/history`),
+    getHistory: (truckId) => apiCall(`/trucks/${truckId}/gps`),
   },
   analytics: {
     getSummary: () => apiCall("/ml/summary"),

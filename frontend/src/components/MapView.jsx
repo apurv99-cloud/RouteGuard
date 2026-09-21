@@ -34,29 +34,48 @@ const truckIcon = new L.DivIcon({
 
 const ChangeView = ({ center }) => {
   const map = useMap();
-  map.setView(center, 13);
+  if (center) {
+    map.setView(center, 13);
+  }
   return null;
 };
 
 const MapView = ({ truck }) => {
   if (!truck) return null;
 
-  // 🔥 SAFE DECODE
   let routePoints = [];
   try {
-    routePoints =
-      truck.polyline && truck.polyline.length > 0
-        ? polyline.decode(truck.polyline)
-        : [];
+    if (truck.polyline && truck.polyline.length > 0) {
+      const rawPoints = truck.polyline.split("|");
+      const parsedRawPoints = rawPoints.map((point) => {
+        const [latitude, longitude] = point.split(",").map(Number);
+        return [latitude, longitude];
+      });
+      const isRawRoute = rawPoints.length > 1
+        && parsedRawPoints.every(([latitude, longitude]) =>
+          Number.isFinite(latitude) && Number.isFinite(longitude)
+        );
+
+      if (isRawRoute) {
+        routePoints = parsedRawPoints;
+      } else {
+        routePoints = polyline.decode(truck.polyline);
+      }
+    }
   } catch (e) {
     console.error("Polyline decode error:", e);
     routePoints = [];
   }
 
-  console.log("RAW:", truck.polyline);
-  console.log("DECODED:", routePoints);
+  const currentPosition = truck.lastLocation || routePoints[0] || truck.origin;
 
-  const currentPosition = truck.lastLocation || [28.8571, 76.827];
+  if (!currentPosition) {
+    return (
+      <div className="w-full h-[500px] rounded-2xl bg-brand-lightest flex items-center justify-center text-brand-steel">
+        No route or GPS position available
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-[500px] rounded-2xl overflow-hidden shadow-xl relative">
@@ -82,15 +101,27 @@ const MapView = ({ truck }) => {
         )}
 
         {/* Truck */}
-        <Marker position={currentPosition} icon={truckIcon}>
+        {currentPosition && (
+          <Marker position={currentPosition} icon={truckIcon}>
           <Popup>
             <b>{truck.id}</b>
             <br />
             Driver: {truck.driver}
             <br />
-            Risk: {truck.risk}%
+            Risk: {truck.riskLevel || "Unavailable"}
+            <br />
+            Deviation: {truck.deviating ? "DEVIATED" : "ON ROUTE"}
+            <br />
+            Distance from route: {truck.distanceFromRoute != null
+              ? `${truck.distanceFromRoute.toFixed(1)} m`
+              : "Unavailable"}
+            <br />
+            Speed: {truck.speedKmh != null
+              ? `${truck.speedKmh.toFixed(2)} km/h`
+              : "Unavailable"}
           </Popup>
-        </Marker>
+          </Marker>
+        )}
 
         {/* Destination */}
         {truck.destination && (

@@ -2,13 +2,8 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp } from 'lucide-react';
 
-const fallbackAnalytics = [
-    { name: 'Trips', deviations: 0 },
-    { name: 'Deviated', deviations: 0 }
-];
-
-const AnalyticsChart = ({ analyticsData }) => {
-    const chartData = Array.isArray(analyticsData) && analyticsData.length > 0 ? analyticsData : fallbackAnalytics;
+const AnalyticsChart = ({ analyticsData, emptyMessage = 'No historical data available' }) => {
+    const chartData = Array.isArray(analyticsData) ? analyticsData : [];
 
     return (
         <div className="bg-brand-darkest rounded-[2rem] p-8 text-brand-sage border border-white/5 shadow-2xl overflow-hidden flex flex-col group transition-all duration-500 hover:shadow-brand-darkest/40 h-[360px] min-h-[360px]">
@@ -22,9 +17,14 @@ const AnalyticsChart = ({ analyticsData }) => {
                 </div>
             </div>
 
-            <div className="relative flex-1 w-full h-[240px]">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
+            {chartData.length === 0 ? (
+                <div className="flex flex-1 items-center justify-center text-sm text-brand-sage/60">
+                    {emptyMessage}
+                </div>
+            ) : (
+                <div className="relative flex-1 w-full h-[240px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData}>
                         <defs>
                             <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#AEC3B0" stopOpacity={1} />
@@ -60,25 +60,25 @@ const AnalyticsChart = ({ analyticsData }) => {
                             }}
                             itemStyle={{ color: '#AEC3B0' }}
                         />
-                        <Bar
-                            dataKey="deviations"
-                            fill="url(#barGradient)"
-                            radius={[6, 6, 0, 0]}
-                            barSize={18}
-                        />
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
+                            <Bar
+                                dataKey="deviated"
+                                fill="url(#barGradient)"
+                                radius={[6, 6, 0, 0]}
+                                barSize={18}
+                            />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
 
-            <div className="mt-6 pt-6 border-t border-white/5 flex justify-between items-center">
-                <div className="flex flex-col">
-                    <span className="text-[9px] uppercase font-black tracking-widest text-brand-sage/30">Target Goal</span>
-                    <span className="text-sm font-black text-white">98.5% <span className="text-green-400 text-[10px] ml-1">↑ 2.1%</span></span>
+            {chartData.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-white/5 flex justify-between items-center text-[10px]">
+                    <span className="uppercase font-black tracking-widest text-brand-sage/40">
+                        Bars: backend DEVIATED record count
+                    </span>
+                    <span className="text-brand-sage/70 font-bold">Latest 7 available dates</span>
                 </div>
-                <div className="px-4 py-2 rounded-xl bg-white/5 text-brand-sage text-[10px] font-black uppercase tracking-widest border border-white/5">
-                    Monthly Report
-                </div>
-            </div>
+            )}
         </div>
     );
 };
