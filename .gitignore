@@ -1,0 +1,65 @@
+# =========================
+# Environment / Secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# =========================
+# Java / Spring Boot
+# =========================
+target/
+Backend/target/
+*.class
+
+# =========================
+# H2 / Local Database
+# =========================
+*.mv.db
+*.lock.db
+*.trace.db
+
+# =========================
+# Application Logs
+# =========================
+*.log
+
+# =========================
+# Backend Local Data
+# =========================
+Backend/data/
+
+# =========================
+# IDE
+# =========================
+.idea/
+.vscode/
+*.iml
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# =========================
+# Python GPS Simulator
+# =========================
+gps-simulator/__pycache__/
