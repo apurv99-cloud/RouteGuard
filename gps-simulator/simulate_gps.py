@@ -12,7 +12,7 @@ import json
 import math
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -181,13 +181,16 @@ def send_point(
     interval: float,
     phase: str,
     offset_meters: float,
+    timestamp: str | None = None,
+    speed_kmh: float | None = None,
 ) -> tuple[float, float]:
     latitude, longitude = point
-    speed_kmh = 0.0
-    if previous_point is not None:
-        speed_kmh = distance_km(previous_point, point) / (interval / 3600)
+    if speed_kmh is None:
+        speed_kmh = 0.0
+        if previous_point is not None:
+            speed_kmh = distance_km(previous_point, point) / (interval / 3600)
 
-    timestamp = datetime.now().replace(microsecond=0).isoformat()
+    timestamp = timestamp or datetime.now().replace(microsecond=0).isoformat()
     payload = {
         "truckId": truck_id,
         "latitude": latitude,
@@ -279,6 +282,107 @@ def simulate_deviation(
         time.sleep(interval)
 
 
+def route_point_at(route: list[tuple[float, float]], fraction: float) -> tuple[float, float]:
+    if len(route) == 1:
+        return route[0]
+    position = max(0.0, min(1.0, fraction)) * (len(route) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(route) - 1)
+    return interpolate(route[lower], route[upper], position - lower)
+
+
+def simulate_historical(
+    base_url: str,
+    truck_id: str,
+    route: list[tuple[float, float]],
+    interval: float,
+    days: int,
+    points_per_day: int,
+    historical_deviation: bool,
+) -> None:
+    if days <= 0:
+        raise ValueError("--days must be greater than zero")
+    if points_per_day < 2:
+        raise ValueError("--points-per-day must be at least two")
+
+    gps_url = f"{base_url.rstrip('/')}/gps"
+    now = datetime.now().replace(microsecond=0)
+    total_points = 0
+    successful = 0
+    failed = 0
+
+    for day_index in range(days):
+        simulated_date = (now - timedelta(days=days - day_index)).date()
+        start_time = datetime.combine(simulated_date, datetime.min.time()).replace(hour=8)
+        end_time = start_time.replace(hour=18)
+        day_points = 0
+        day_successful = 0
+        day_failed = 0
+        previous_point: tuple[float, float] | None = None
+        previous_timestamp: datetime | None = None
+
+        print(f"Day {day_index + 1}/{days} ({simulated_date.isoformat()})")
+        for point_index in range(points_per_day):
+            fraction = point_index / (points_per_day - 1)
+            route_point = route_point_at(route, fraction)
+            offset_meters = 0.0
+            phase = "HISTORICAL_ON_ROUTE"
+
+            if historical_deviation and day_index in {2, 4} and 0.35 <= fraction <= 0.65:
+                local_index = max(1, min(len(route) - 2, int(fraction * (len(route) - 1))))
+                offset_meters = 500.0 * (1.0 - abs(fraction - 0.5) / 0.15)
+                offset_meters = max(0.0, offset_meters)
+                route_point = offset_point(
+                    route[local_index],
+                    route[local_index - 1],
+                    route[local_index + 1],
+                    offset_meters,
+                )
+                phase = "HISTORICAL_DEVIATION"
+
+            timestamp = start_time + (end_time - start_time) * fraction
+            speed_kmh = 0.0
+            if previous_point is not None and previous_timestamp is not None:
+                elapsed_hours = max((timestamp - previous_timestamp).total_seconds() / 3600, 1e-6)
+                speed_kmh = distance_km(previous_point, route_point) / elapsed_hours
+
+            payload_timestamp = timestamp.isoformat()
+            try:
+                send_point(
+                    gps_url,
+                    truck_id,
+                    route_point,
+                    previous_point,
+                    interval,
+                    phase,
+                    offset_meters,
+                    timestamp=payload_timestamp,
+                    speed_kmh=speed_kmh,
+                )
+                day_successful += 1
+                successful += 1
+            except RuntimeError as error:
+                day_failed += 1
+                failed += 1
+                print(f"GPS request failed: {error}", file=sys.stderr)
+
+            day_points += 1
+            total_points += 1
+            previous_point = route_point
+            previous_timestamp = timestamp
+            if interval > 0:
+                time.sleep(interval)
+
+        print(f"Points: {day_points}")
+        print(f"Successful: {day_successful}")
+        print(f"Failed: {day_failed}")
+
+    print("Final:")
+    print(f"Total points: {total_points}")
+    print(f"Successful: {successful}")
+    print(f"Failed: {failed}")
+
+
 def simulate(
     base_url: str,
     truck_id: str,
@@ -287,6 +391,9 @@ def simulate(
     deviation_distance: float,
     deviation_start: float,
     deviation_duration: float,
+    days: int,
+    points_per_day: int,
+    historical_deviation: bool,
 ) -> None:
     if interval <= 0:
         raise ValueError("--interval must be greater than zero")
@@ -294,7 +401,7 @@ def simulate(
     route = assigned_route(base_url, truck_id)
     if mode == "normal":
         simulate_normal(base_url, truck_id, route, interval)
-    else:
+    elif mode == "deviation":
         simulate_deviation(
             base_url,
             truck_id,
@@ -303,6 +410,16 @@ def simulate(
             deviation_distance,
             deviation_start,
             deviation_duration,
+        )
+    else:
+        simulate_historical(
+            base_url,
+            truck_id,
+            route,
+            interval,
+            days,
+            points_per_day,
+            historical_deviation,
         )
 
 
@@ -324,7 +441,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("normal", "deviation"),
+        choices=("normal", "deviation", "historical"),
         default="normal",
         help="Telemetry mode (default: normal)",
     )
@@ -346,6 +463,23 @@ def parse_args() -> argparse.Namespace:
         default=30.0,
         help="Seconds to remain at maximum deviation (default: 30)",
     )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of previous days for historical mode (default: 7)",
+    )
+    parser.add_argument(
+        "--points-per-day",
+        type=int,
+        default=100,
+        help="GPS points generated per simulated day (default: 100)",
+    )
+    parser.add_argument(
+        "--historical-deviation",
+        action="store_true",
+        help="Add controlled telemetry offsets on simulated days 3 and 5",
+    )
     return parser.parse_args()
 
 
@@ -360,6 +494,9 @@ if __name__ == "__main__":
             arguments.deviation_distance,
             arguments.deviation_start,
             arguments.deviation_duration,
+            arguments.days,
+            arguments.points_per_day,
+            arguments.historical_deviation,
         )
     except KeyboardInterrupt:
         print("\nSimulator stopped.")

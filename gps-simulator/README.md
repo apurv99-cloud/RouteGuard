@@ -65,3 +65,44 @@ Available controls:
 
 The simulator does not assign `deviating`, `riskLevel`, alerts, or status. It
 only sends GPS coordinates and prints those values from the backend response.
+
+## Phase 3 historical mode
+
+Historical mode sends telemetry for previous calendar days through the same
+`POST /api/gps` endpoint. It does not insert database rows directly. The
+backend receives the supplied `timestamp` and persists it in `GPS.timestamp`.
+
+Small smoke test:
+
+```powershell
+python .\gps-simulator\simulate_gps.py GPS-TEST-1 `
+  --mode historical `
+  --days 2 `
+  --points-per-day 10 `
+  --interval 0.1
+```
+
+Default seven-day run:
+
+```powershell
+python .\gps-simulator\simulate_gps.py GPS-TEST-1 `
+  --mode historical `
+  --days 7 `
+  --points-per-day 100 `
+  --interval 0.1
+```
+
+Optional controlled historical deviation on simulated days 3 and 5:
+
+```powershell
+python .\gps-simulator\simulate_gps.py GPS-TEST-1 `
+  --mode historical `
+  --days 7 `
+  --points-per-day 100 `
+  --historical-deviation `
+  --interval 0.1
+```
+
+Historical timestamps are distributed from 08:00 through 18:00 on each
+simulated date. The simulator prints successful and failed request counts and
+backend response values. Risk and deviation remain entirely backend-owned.
