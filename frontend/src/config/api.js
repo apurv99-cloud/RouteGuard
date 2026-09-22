@@ -1,7 +1,6 @@
 // API Configuration
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL; // same-origin proxy path (nginx) to avoid CORS
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 
 const API_TIMEOUT = 30000;
 

@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./Backend
+    environment:
+      PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/app/data/routeguard;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE
+      SPRING_DATASOURCE_USERNAME: sa
+      SPRING_DATASOURCE_PASSWORD: ""
+      SPRING_DATASOURCE_DRIVER: org.h2.Driver
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      ROUTEGUARD_CORS_ALLOWED_ORIGINS: http://localhost:8081
+    volumes:
+      - routeguard-data:/app/data
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  routeguard-data:

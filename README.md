@@ -93,20 +93,20 @@ The application consists of four main components:
 3. Run the application stack:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 This will start:
 - PostgreSQL on port 5432
-- Backend API on port 8081
-- Frontend on port 80
-- ML service on port 8000
+- Frontend on port 8081
+- Backend API behind the frontend at `/api`
+- Persistent application data in the `routeguard-data` volume
 
 ### Manual Setup
 
 #### Backend Setup
 ```bash
-cd backend
+cd Backend
 ./mvnw clean install
 ./mvnw spring-boot:run
 ```
@@ -131,16 +131,21 @@ python app.py
 
 #### Backend (.env or application.properties)
 ```
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/techs
+SPRING_DATASOURCE_URL=jdbc:h2:file:./data/routeguard;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE
 SPRING_DATASOURCE_USERNAME=postgres
 SPRING_DATASOURCE_PASSWORD=your_password
-SPRING_PROFILES_ACTIVE=dev
+PORT=8080
+ROUTEGUARD_CORS_ALLOWED_ORIGINS=http://localhost:5173
 ```
 
 #### Frontend (.env)
 ```
-VITE_API_BASE_URL=http://localhost:8080
+VITE_API_BASE_URL=/api
 ```
+
+The frontend defaults to `/api`, which works with the Docker Nginx proxy and avoids
+hard-coding a deployment hostname. For local Vite development, requests are proxied
+to `http://localhost:8080` automatically.
 
 ## Database Schema
 
