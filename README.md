@@ -96,6 +96,9 @@ The application consists of four main components:
 docker compose up --build
 ```
 
+Before starting Compose, copy `.env.example` to `.env` and set
+`POSTGRES_PASSWORD` to the password for the PostgreSQL user.
+
 This will start:
 - PostgreSQL on port 5432
 - Frontend on port 8081
@@ -131,9 +134,10 @@ python app.py
 
 #### Backend (.env or application.properties)
 ```
-SPRING_DATASOURCE_URL=jdbc:h2:file:./data/routeguard;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/RouteGuard
 SPRING_DATASOURCE_USERNAME=postgres
-SPRING_DATASOURCE_PASSWORD=your_password
+SPRING_DATASOURCE_PASSWORD=your_postgres_password
+SPRING_DATASOURCE_DRIVER=org.postgresql.Driver
 PORT=8080
 ROUTEGUARD_CORS_ALLOWED_ORIGINS=http://localhost:5173
 ```
